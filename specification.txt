@@ -1,0 +1,148 @@
+
+The aim of this exercise is to model an idealized microkernel.
+
+The underlying machine has five registers (r0, r1, r2, r3, and r4) and
+responds to two types of events: timer interrupts and system traps.
+
+We ignore the details of user processes, assuming that they may change the
+registers and generate system calls arbitrarily.
+
+System calls
+------------
+
+When a system call is triggered, the microkernel reads the contents of the
+registers to determine the call being made and the arguments given. It
+responds by performing the call (i.e., updating the state of the system),
+and putting return values into the registers.
+
+Register r0 specifies one of the calls:
+    0	    new_channel
+    1	    send
+    2	    receive
+    3	    fork
+    4	    exit
+    5	    wait
+
+On an invalid call, the system sets r0 to -1 before returning.
+
+* new_channel
+
+  The processes within the system communicate via rendezvous on numbered
+  channels. This system call creates a new channel. On return, r0 is either
+  set to the newly created channel number or to a negative value if a new
+  channel cannot be created. Only explictly created channels exist.
+
+  You may assume a limit on the number of possible channels.
+
+* send
+
+  The send call takes two arguments: r1 is the channel to send on (created
+  previously by a call to new_channel), and r2 is the value to send.
+
+  If another process is already sending on the channel, or if the channel
+  given is invalid, the call returns with r0 set to 0.
+
+  The call succeeds immediately if another process is already waiting on the
+  channel, otherwise the sender blocks until a matching receive occurs. When
+  multiple processes are already waiting, one with the highest-priority is
+  chosen arbitrarily; the others remain blocked. When the call does
+  eventually return, r0 is set to 1.
+
+* receive
+
+  A receive may offer to synchronize on up to 4 channels, specified in r1
+  through r4. Non-existing channels are ignored (i.e., any channel numbers
+  that have not previously been returned by new_channel). If no valid
+  channels are specified the call returns immediately with r0 set to 0.
+
+  If one or more senders are already blocked on any of the valid channels,
+  one is chosen arbitrarily and the call returns immediately with r0 set to
+  1, r1 set to the channel received on, and r2 sent to the value sent.
+  Otherwise, the receiver blocks until a send occurs on one of the specified
+  channels.
+
+* fork
+
+  A fork call creates a new child process.
+
+  Each process is assigned a priority between 0 (the lowest) and 15 (the
+  highest). The r1 register specifies the priority of the new process. The
+  call returns without creating a process and with r0 set to 0 if the
+  specified priority is strictly higher than the priority of the creating
+  thread.
+
+  If the priority is valid and a process can be created, r0 is set to 1 and
+  r1 is set to the process id of the newly created child. If a new process
+  cannot be created, r0 is set to 0.
+
+  In a newly created child, r0 is set to 2, r1 is set to the process id of
+  the parent (who called fork), and the other registers (r2, r3, and r4) are
+  copied from the parent process.
+
+  You may assume a limit on the number of possible processes.
+
+* exit
+
+  Terminates a process with the return value given in r1.
+
+  A terminated process remains in a `zombie' state until its return value is
+  recuperated by a call to wait.
+
+  Any children of an exiting process become orphaned; their parent is set
+  to process 1 (the init process; see below).
+
+* wait
+
+  The process blocks until one of its children die. If no children remain,
+  the call returns immediately with r0 set to 0.
+
+  If there is already a zombie child, or when a child exits, the call
+  returns with r0 set to 1, r1 set to the id of the child, and r2 set to the
+  child's return value. When there are several zombie children, one is
+  chosen arbitrarily.
+
+Scheduling
+----------
+
+A process is runnable if it is not blocked on a channel, not waiting for one
+of its children, and not a zombie.
+
+The system runs the highest priority runnable processes in round robin
+fashion.
+
+The system receives regular timer interrupts. Each marks the end of a time
+slice. Each process receives six (possibly partial) time slices before it is
+preempted. Time slices are not counted while a process is blocking or
+waiting, but neither is the time slice count reset.
+
+A context switch (change of the running process) thus occurs when either the
+running process blocks or is preempted. Register values must be saved and
+restored across context switches.
+
+Observable state
+----------------
+
+The only externally observable state of the system is the identifier of the
+currently running process and the contents of the five registers. The
+internal state of the operating system cannot be seen or modified from
+outside.
+
+Initial state
+-------------
+
+The system starts with two processes:
+* idle with id 0, priority 0, and parent equal to itself.
+* init with id 1, priority 15, and parent equal to itself.
+
+All registers are set to 0 and there are no channels. You may assume that
+the idle process is always runnable and that neither it nor the init process
+ever exits.
+
+Possible extensions
+-------------------
+1. Minimize calls to the schedule function.
+2. Avoid priority inversion.
+3. Add a yield command.
+4. Add interrupt events and allow them to be mapped to channels.
+
+
